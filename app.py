@@ -18,18 +18,22 @@ st.write(
 MODEL_FILE = "student_performance_model.pkl"
 DATASET_FILE = "student_performance_dataset.csv"
 
+
 # Load trained model
 @st.cache_resource
 def load_model():
     return joblib.load(MODEL_FILE)
+
 
 # Load original dataset
 @st.cache_data
 def load_dataset():
     return pd.read_csv(DATASET_FILE)
 
+
 model = load_model()
 df = load_dataset()
+
 
 # Initialize temporary session history
 if "prediction_history" not in st.session_state:
@@ -38,9 +42,11 @@ if "prediction_history" not in st.session_state:
 if "last_prediction" not in st.session_state:
     st.session_state.last_prediction = None
 
+
 dashboard_tab, prediction_tab = st.tabs(
     ["📊 Dashboard", "🔮 Prediction"]
 )
+
 
 # ---------------- DASHBOARD ----------------
 
@@ -155,7 +161,19 @@ with dashboard_tab:
             key="download_all"
         )
 
+        st.divider()
+
+        if st.button(
+            "🗑️ Clear My Prediction History",
+            type="secondary",
+            use_container_width=True
+        ):
+            st.session_state.prediction_history = []
+            st.session_state.last_prediction = None
+            st.rerun()
+
     else:
+
         st.info(
             "You have not made any predictions in this session yet."
         )
@@ -310,7 +328,6 @@ with prediction_tab:
             "by the trained machine learning model."
         )
 
-        # Download latest prediction
         latest_df = pd.DataFrame([last_prediction])
 
         latest_csv = latest_df.to_csv(
