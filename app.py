@@ -2,7 +2,6 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import os
 from datetime import datetime
 
 st.set_page_config(
@@ -12,16 +11,19 @@ st.set_page_config(
 )
 
 st.title("🎓 Student Performance Predictor")
-st.write("Predict student exam performance using Machine Learning.")
+st.write(
+    "Predict student exam performance using Machine Learning."
+)
 
 MODEL_FILE = "student_performance_model.pkl"
 DATASET_FILE = "student_performance_dataset.csv"
-HISTORY_FILE = "prediction_history.csv"
 
+# Load trained model
 @st.cache_resource
 def load_model():
     return joblib.load(MODEL_FILE)
 
+# Load original dataset
 @st.cache_data
 def load_dataset():
     return pd.read_csv(DATASET_FILE)
@@ -29,23 +31,12 @@ def load_dataset():
 model = load_model()
 df = load_dataset()
 
-history_columns = [
-    "Date",
-    "Study_Hours",
-    "Previous_Score",
-    "Attendance",
-    "Assignments_Completed",
-    "Predicted_Score"
-]
+# Initialize temporary session history
+if "prediction_history" not in st.session_state:
+    st.session_state.prediction_history = []
 
-if not os.path.exists(HISTORY_FILE):
-    pd.DataFrame(columns=history_columns).to_csv(
-        HISTORY_FILE,
-        index=False
-    )
-
-def load_history():
-    return pd.read_csv(HISTORY_FILE)
+if "last_prediction" not in st.session_state:
+    st.session_state.last_prediction = None
 
 dashboard_tab, prediction_tab = st.tabs(
     ["📊 Dashboard", "🔮 Prediction"]
@@ -57,7 +48,7 @@ with dashboard_tab:
 
     st.header("Student Performance Dashboard")
 
-    history = load_history()
+    history = st.session_state.prediction_history
 
     total_students = len(df)
     average_score = df["Exam_Score"].mean()
@@ -67,9 +58,9 @@ with dashboard_tab:
     total_predictions = len(history)
 
     if total_predictions > 0:
-        average_predicted_score = history[
-            "Predicted_Score"
-        ].mean()
+        average_predicted_score = sum(
+            item["Predicted_Score"] for item in history
+        ) / total_predictions
     else:
         average_predicted_score = 0
 
@@ -78,7 +69,10 @@ with dashboard_tab:
     col1.metric("Total Students", total_students)
     col2.metric("Average Exam Score", f"{average_score:.2f}")
     col3.metric("Highest Exam Score", f"{highest_score:.2f}")
-    col4.metric("Average Attendance", f"{average_attendance:.2f}%")
+    col4.metric(
+        "Average Attendance",
+        f"{average_attendance:.2f}%"
+    )
 
     st.divider()
 
@@ -89,6 +83,11 @@ with dashboard_tab:
     col6.metric(
         "Average Predicted Score",
         f"{average_predicted_score:.2f} / 100"
+    )
+
+    st.caption(
+        "Prediction statistics are temporary and belong "
+        "to your current website session."
     )
 
     st.divider()
@@ -133,43 +132,32 @@ with dashboard_tab:
 
     st.divider()
 
-    st.subheader("📝 Prediction History")
+    st.subheader("📝 Your Prediction History")
 
-    if not history.empty:
+    if history:
 
-        history["Date"] = pd.to_datetime(
-            history["Date"],
-            errors="coerce"
-        )
-
-        chart_history = history.dropna(
-            subset=["Date", "Predicted_Score"]
-        ).set_index("Date")
-
-        st.line_chart(
-            chart_history["Predicted_Score"]
-        )
+        history_df = pd.DataFrame(history)
 
         st.dataframe(
-            history,
+            history_df,
             use_container_width=True
         )
 
-        csv_data = history.to_csv(
+        history_csv = history_df.to_csv(
             index=False
         ).encode("utf-8")
 
         st.download_button(
-            label="⬇️ Download Prediction History",
-            data=csv_data,
-            file_name="prediction_history.csv",
-            mime="text/csv"
+            label="⬇️ Save All My Predictions",
+            data=history_csv,
+            file_name="my_prediction_history.csv",
+            mime="text/csv",
+            key="download_all"
         )
 
     else:
         st.info(
-            "No predictions yet. Go to the Prediction tab "
-            "to make your first prediction."
+            "You have not made any predictions in this session yet."
         )
 
     st.divider()
@@ -197,7 +185,8 @@ with prediction_tab:
         min_value=0.0,
         max_value=24.0,
         value=5.0,
-        step=0.5
+        step=0.5,
+        key="study_hours"
     )
 
     col1, col2 = st.columns(2)
@@ -207,7 +196,8 @@ with prediction_tab:
             "Previous Marks Obtained",
             min_value=0.0,
             value=400.0,
-            step=1.0
+            step=1.0,
+            key="previous_marks"
         )
 
     with col2:
@@ -215,7 +205,8 @@ with prediction_tab:
             "Maximum Marks",
             min_value=1.0,
             value=500.0,
-            step=1.0
+            step=1.0,
+            key="maximum_marks"
         )
 
     attendance = st.number_input(
@@ -223,7 +214,8 @@ with prediction_tab:
         min_value=0.0,
         max_value=100.0,
         value=85.0,
-        step=1.0
+        step=1.0,
+        key="attendance"
     )
 
     assignments = st.number_input(
@@ -231,7 +223,8 @@ with prediction_tab:
         min_value=0,
         max_value=100,
         value=8,
-        step=1
+        step=1,
+        key="assignments"
     )
 
     if st.button(
@@ -240,6 +233,8 @@ with prediction_tab:
     ):
 
         if previous_marks > maximum_marks:
+
+            st.session_state.last_prediction = None
 
             st.error(
                 "Previous marks cannot exceed maximum marks."
@@ -262,51 +257,74 @@ with prediction_tab:
 
             prediction = max(
                 0,
-                min(100, prediction)
+                min(100, float(prediction))
             )
 
-            prediction = round(float(prediction), 2)
+            prediction = round(prediction, 2)
 
-            new_record = pd.DataFrame([{
+            new_record = {
                 "Date": datetime.now().strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),
                 "Study_Hours": study_hours,
-                "Previous_Score": previous_percentage,
+                "Previous_Marks": previous_marks,
+                "Maximum_Marks": maximum_marks,
+                "Previous_Percentage": round(
+                    previous_percentage, 2
+                ),
                 "Attendance": attendance,
                 "Assignments_Completed": assignments,
-                "Predicted_Score": prediction
-            }])
+                "Predicted_Score": prediction,
+                "Predicted_Percentage": prediction
+            }
 
-            new_record.to_csv(
-                HISTORY_FILE,
-                mode="a",
-                header=False,
-                index=False
+            st.session_state.prediction_history.append(
+                new_record
             )
 
-            st.success(
-                "Prediction completed successfully!"
-            )
+            st.session_state.last_prediction = new_record
 
-            result_col1, result_col2 = st.columns(2)
+            st.rerun()
 
-            result_col1.metric(
-                "Predicted Exam Score",
-                f"{prediction:.2f} / 100"
-            )
+    # Display latest prediction
+    last_prediction = st.session_state.last_prediction
 
-            result_col2.metric(
-                "Predicted Exam Percentage",
-                f"{prediction:.2f}%"
-            )
+    if last_prediction is not None:
 
-            st.info(
-                "This is an estimated result generated "
-                "by the trained machine learning model."
-            )
+        st.success("Prediction completed successfully!")
 
-            st.caption(
-                "Note: The prediction is an estimate, "
-                "not a guaranteed examination result."
-            )
+        result_col1, result_col2 = st.columns(2)
+
+        result_col1.metric(
+            "Predicted Exam Score",
+            f"{last_prediction['Predicted_Score']:.2f} / 100"
+        )
+
+        result_col2.metric(
+            "Predicted Exam Percentage",
+            f"{last_prediction['Predicted_Percentage']:.2f}%"
+        )
+
+        st.info(
+            "This is an estimated result generated "
+            "by the trained machine learning model."
+        )
+
+        # Download latest prediction
+        latest_df = pd.DataFrame([last_prediction])
+
+        latest_csv = latest_df.to_csv(
+            index=False
+        ).encode("utf-8")
+
+        st.download_button(
+            label="💾 Save This Prediction",
+            data=latest_csv,
+            file_name="my_student_prediction.csv",
+            mime="text/csv",
+            key="download_latest"
+        )
+
+        st.caption(
+            "Your prediction is temporary unless you download and save it."
+        )
