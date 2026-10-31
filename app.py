@@ -292,4 +292,4 @@ with prediction_tab:
                 "trained machine learning model."
             )
 
-            st.rerun()
+            
