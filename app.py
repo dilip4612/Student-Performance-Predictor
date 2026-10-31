@@ -18,39 +18,35 @@ MODEL_FILE = "student_performance_model.pkl"
 DATASET_FILE = "student_performance_dataset.csv"
 HISTORY_FILE = "prediction_history.csv"
 
-# Load model
 @st.cache_resource
 def load_model():
     return joblib.load(MODEL_FILE)
 
-model = load_model()
-
-# Load dataset
 @st.cache_data
 def load_dataset():
     return pd.read_csv(DATASET_FILE)
 
+model = load_model()
 df = load_dataset()
 
-# Create prediction history file
+history_columns = [
+    "Date",
+    "Study_Hours",
+    "Previous_Score",
+    "Attendance",
+    "Assignments_Completed",
+    "Predicted_Score"
+]
+
 if not os.path.exists(HISTORY_FILE):
-    history_columns = [
-        "Date",
-        "Study_Hours",
-        "Previous_Score",
-        "Attendance",
-        "Assignments_Completed",
-        "Predicted_Score"
-    ]
     pd.DataFrame(columns=history_columns).to_csv(
-        HISTORY_FILE, index=False
+        HISTORY_FILE,
+        index=False
     )
 
-# Load prediction history
 def load_history():
     return pd.read_csv(HISTORY_FILE)
 
-# Dashboard and prediction tabs
 dashboard_tab, prediction_tab = st.tabs(
     ["📊 Dashboard", "🔮 Prediction"]
 )
@@ -71,7 +67,9 @@ with dashboard_tab:
     total_predictions = len(history)
 
     if total_predictions > 0:
-        average_predicted_score = history["Predicted_Score"].mean()
+        average_predicted_score = history[
+            "Predicted_Score"
+        ].mean()
     else:
         average_predicted_score = 0
 
@@ -87,20 +85,20 @@ with dashboard_tab:
     col5, col6 = st.columns(2)
 
     col5.metric("Total Predictions", total_predictions)
+
     col6.metric(
         "Average Predicted Score",
-        f"{average_predicted_score:.2f}"
+        f"{average_predicted_score:.2f} / 100"
     )
 
     st.divider()
 
     st.subheader("📈 Exam Score Distribution")
 
-    score_distribution = (
-        df["Exam_Score"]
-        .value_counts(bins=10, sort=False)
-        .sort_index()
-    )
+    score_distribution = df["Exam_Score"].value_counts(
+        bins=10,
+        sort=False
+    ).sort_index()
 
     st.bar_chart(score_distribution)
 
@@ -157,7 +155,9 @@ with dashboard_tab:
             use_container_width=True
         )
 
-        csv_data = history.to_csv(index=False).encode("utf-8")
+        csv_data = history.to_csv(
+            index=False
+        ).encode("utf-8")
 
         st.download_button(
             label="⬇️ Download Prediction History",
@@ -260,7 +260,12 @@ with prediction_tab:
 
             prediction = model.predict(input_data)[0]
 
-            prediction = max(0, min(100, prediction))
+            prediction = max(
+                0,
+                min(100, prediction)
+            )
+
+            prediction = round(float(prediction), 2)
 
             new_record = pd.DataFrame([{
                 "Date": datetime.now().strftime(
@@ -270,7 +275,7 @@ with prediction_tab:
                 "Previous_Score": previous_percentage,
                 "Attendance": attendance,
                 "Assignments_Completed": assignments,
-                "Predicted_Score": round(prediction, 2)
+                "Predicted_Score": prediction
             }])
 
             new_record.to_csv(
@@ -280,16 +285,28 @@ with prediction_tab:
                 index=False
             )
 
-            st.success("Prediction completed successfully!")
+            st.success(
+                "Prediction completed successfully!"
+            )
 
-            st.metric(
+            result_col1, result_col2 = st.columns(2)
+
+            result_col1.metric(
                 "Predicted Exam Score",
                 f"{prediction:.2f} / 100"
             )
 
-            st.info(
-                "This is an estimated score based on the "
-                "trained machine learning model."
+            result_col2.metric(
+                "Predicted Exam Percentage",
+                f"{prediction:.2f}%"
             )
 
-            
+            st.info(
+                "This is an estimated result generated "
+                "by the trained machine learning model."
+            )
+
+            st.caption(
+                "Note: The prediction is an estimate, "
+                "not a guaranteed examination result."
+            )
