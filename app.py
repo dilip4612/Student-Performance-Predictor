@@ -9,8 +9,8 @@ st.set_page_config(
     layout="wide"
 )
 
-model = joblib.load("/content/student_performance_model.pkl")
-df = pd.read_csv("/content/student_performance_dataset.csv")
+model = joblib.load("student_performance_model.pkl")
+df = pd.read_csv("student_performance_dataset.csv")
 
 if "prediction_history" not in st.session_state:
     st.session_state.prediction_history = []
