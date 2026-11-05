@@ -2,7 +2,6 @@
 import streamlit as st
 import pandas as pd
 import joblib
-from datetime import datetime
 
 st.set_page_config(
     page_title="Student Performance Predictor",
@@ -10,32 +9,9 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🎓 Student Performance Predictor")
-st.write(
-    "Predict student exam performance using Machine Learning."
-)
+model = joblib.load("/content/student_performance_model.pkl")
+df = pd.read_csv("/content/student_performance_dataset.csv")
 
-MODEL_FILE = "student_performance_model.pkl"
-DATASET_FILE = "student_performance_dataset.csv"
-
-
-# Load trained model
-@st.cache_resource
-def load_model():
-    return joblib.load(MODEL_FILE)
-
-
-# Load original dataset
-@st.cache_data
-def load_dataset():
-    return pd.read_csv(DATASET_FILE)
-
-
-model = load_model()
-df = load_dataset()
-
-
-# Initialize temporary session history
 if "prediction_history" not in st.session_state:
     st.session_state.prediction_history = []
 
@@ -43,305 +19,409 @@ if "last_prediction" not in st.session_state:
     st.session_state.last_prediction = None
 
 
-dashboard_tab, prediction_tab = st.tabs(
-    ["📊 Dashboard", "🔮 Prediction"]
+st.sidebar.title("🎓 Student Performance Predictor")
+
+page = st.sidebar.radio(
+    "Go to",
+    ["🏠 Home", "📊 Dashboard", "🔮 Prediction"]
 )
 
 
-# ---------------- DASHBOARD ----------------
+if page == "🏠 Home":
 
-with dashboard_tab:
+    st.title("🎓 Student Performance Predictor")
 
-    st.header("Student Performance Dashboard")
+    st.write(
+        "Predict a student's exam performance using study hours, "
+        "attendance, previous exam performance and assignments."
+    )
 
-    history = st.session_state.prediction_history
+    st.info(
+        "Use the Prediction page to enter student details and generate a prediction."
+    )
 
-    total_students = len(df)
-    average_score = df["Exam_Score"].mean()
-    highest_score = df["Exam_Score"].max()
-    average_attendance = df["Attendance"].mean()
 
-    total_predictions = len(history)
+elif page == "📊 Dashboard":
+
+    st.title("📊 Dashboard")
+
+    total_predictions = len(st.session_state.prediction_history)
 
     if total_predictions > 0:
-        average_predicted_score = sum(
-            item["Predicted_Score"] for item in history
-        ) / total_predictions
+
+        predicted_scores = [
+            item["Predicted Score"]
+            for item in st.session_state.prediction_history
+        ]
+
+        attendances = [
+            item["Attendance"]
+            for item in st.session_state.prediction_history
+        ]
+
+        highest_score = max(predicted_scores)
+        average_score = sum(predicted_scores) / len(predicted_scores)
+        average_attendance = sum(attendances) / len(attendances)
+
     else:
-        average_predicted_score = 0
+
+        predicted_scores = []
+        average_score = 0
+        highest_score = 0
+        average_attendance = 0
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Total Students", total_students)
-    col2.metric("Average Exam Score", f"{average_score:.2f}")
-    col3.metric("Highest Exam Score", f"{highest_score:.2f}")
-    col4.metric(
-        "Average Attendance",
-        f"{average_attendance:.2f}%"
-    )
+    with col1:
+        st.metric("Total Predictions", total_predictions)
+
+    with col2:
+        st.metric(
+            "Average Predicted Score",
+            f"{average_score:.2f}"
+        )
+
+    with col3:
+        st.metric(
+            "Highest Score",
+            f"{highest_score:.2f}"
+        )
+
+    with col4:
+        st.metric(
+            "Average Attendance",
+            f"{average_attendance:.2f}%"
+        )
 
     st.divider()
 
-    col5, col6 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    col5.metric("Total Predictions", total_predictions)
+    with col1:
 
-    col6.metric(
-        "Average Predicted Score",
-        f"{average_predicted_score:.2f} / 100"
-    )
+        st.subheader("📈 Score Distribution")
 
-    st.caption(
-        "Prediction statistics are temporary and belong "
-        "to your current website session."
-    )
+        if predicted_scores:
+
+            chart_data = pd.DataFrame(
+                {"Predicted Score": predicted_scores}
+            )
+
+            st.bar_chart(chart_data)
+
+        else:
+
+            st.info("No predictions available yet.")
+
+    with col2:
+
+        st.subheader("📚 Study Hours vs Score")
+
+        if total_predictions > 0:
+
+            study_score_data = pd.DataFrame({
+                "Study Hours": [
+                    item["Study Hours"]
+                    for item in st.session_state.prediction_history
+                ],
+                "Predicted Score": predicted_scores
+            })
+
+            st.line_chart(
+                study_score_data.set_index("Study Hours")
+            )
+
+        else:
+
+            st.info("No prediction data available yet.")
 
     st.divider()
-
-    st.subheader("📈 Exam Score Distribution")
-
-    score_distribution = df["Exam_Score"].value_counts(
-        bins=10,
-        sort=False
-    ).sort_index()
-
-    st.bar_chart(score_distribution)
-
-    st.subheader("📚 Study Hours vs Exam Score")
-
-    st.scatter_chart(
-        df,
-        x="Study_Hours",
-        y="Exam_Score"
-    )
 
     st.subheader("⭐ Feature Importance")
 
     feature_names = [
-        "Study_Hours",
+        "Study Hours",
         "Attendance",
-        "Previous_Score",
-        "Assignments_Completed"
+        "Previous Score",
+        "Assignments Completed"
     ]
 
-    importance_df = pd.DataFrame({
+    importance_data = pd.DataFrame({
         "Feature": feature_names,
         "Importance": model.feature_importances_
-    }).sort_values(
-        by="Importance",
-        ascending=False
-    )
+    })
 
     st.bar_chart(
-        importance_df.set_index("Feature")
+        importance_data.set_index("Feature")
     )
 
     st.divider()
 
-    st.subheader("📝 Your Prediction History")
-
-    if history:
-
-        history_df = pd.DataFrame(history)
-
-        st.dataframe(
-            history_df,
-            use_container_width=True
-        )
-
-        history_csv = history_df.to_csv(
-            index=False
-        ).encode("utf-8")
-
-        st.download_button(
-            label="⬇️ Save All My Predictions",
-            data=history_csv,
-            file_name="my_prediction_history.csv",
-            mime="text/csv",
-            key="download_all"
-        )
-
-        st.divider()
-
-        if st.button(
-            "🗑️ Clear My Prediction History",
-            type="secondary",
-            use_container_width=True
-        ):
-            st.session_state.prediction_history = []
-            st.session_state.last_prediction = None
-            st.rerun()
-
-    else:
-
-        st.info(
-            "You have not made any predictions in this session yet."
-        )
-
-    st.divider()
-
-    st.subheader("📋 Original Dataset Preview")
+    st.subheader("📋 Dataset Preview")
 
     st.dataframe(
         df.head(10),
         use_container_width=True
     )
 
+    st.divider()
 
-# ---------------- PREDICTION ----------------
+    st.subheader("🕘 Prediction History")
 
-with prediction_tab:
+    if st.session_state.prediction_history:
 
-    st.header("Predict Student Exam Performance")
+        history_df = pd.DataFrame(
+            st.session_state.prediction_history
+        )
 
-    st.write(
-        "Enter the student's academic details below."
-    )
+        st.dataframe(
+            history_df,
+            use_container_width=True
+        )
 
-    study_hours = st.number_input(
-        "Daily Study Hours",
-        min_value=0.0,
-        max_value=24.0,
-        value=5.0,
-        step=0.5,
-        key="study_hours"
-    )
+        if st.button("🗑️ Delete History"):
+
+            st.session_state.prediction_history = []
+            st.session_state.last_prediction = None
+
+            st.success("Prediction history deleted.")
+
+            st.rerun()
+
+    else:
+
+        st.info("No prediction history yet.")
+
+
+elif page == "🔮 Prediction":
+
+    st.title("🔮 Predict Student Performance")
+
+    st.write("Enter the student's details below.")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        previous_marks = st.number_input(
-            "Previous Marks Obtained",
+
+        study_hours = st.number_input(
+            "Daily Study Hours",
             min_value=0.0,
-            value=400.0,
-            step=1.0,
-            key="previous_marks"
+            max_value=24.0,
+            value=5.0,
+            step=0.5
+        )
+
+        previous_marks = st.number_input(
+            "Previous Exam Marks",
+            min_value=0.0,
+            value=500.0,
+            step=1.0
+        )
+
+        previous_max_marks = st.number_input(
+            "Previous Exam Maximum Marks",
+            min_value=1.0,
+            value=625.0,
+            step=1.0
+        )
+
+        attendance = st.number_input(
+            "Attendance (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=80.0,
+            step=1.0
         )
 
     with col2:
-        maximum_marks = st.number_input(
-            "Maximum Marks",
-            min_value=1.0,
-            value=500.0,
-            step=1.0,
-            key="maximum_marks"
+
+        assignments = st.number_input(
+            "Assignments Completed",
+            min_value=0,
+            max_value=10,
+            value=8,
+            step=1
         )
 
-    attendance = st.number_input(
-        "Attendance Percentage",
-        min_value=0.0,
-        max_value=100.0,
-        value=85.0,
-        step=1.0,
-        key="attendance"
-    )
+        actual_marks = st.number_input(
+            "Actual Exam Marks",
+            min_value=0.0,
+            value=540.0,
+            step=1.0
+        )
 
-    assignments = st.number_input(
-        "Assignments Completed",
-        min_value=0,
-        max_value=100,
-        value=8,
-        step=1,
-        key="assignments"
-    )
+        actual_max_marks = st.number_input(
+            "Actual Exam Maximum Marks",
+            min_value=1.0,
+            value=600.0,
+            step=1.0
+        )
+
+    st.write("")
 
     if st.button(
         "🔮 Predict Exam Score",
         use_container_width=True
     ):
 
-        if previous_marks > maximum_marks:
-
-            st.session_state.last_prediction = None
+        if previous_marks > previous_max_marks:
 
             st.error(
-                "Previous marks cannot exceed maximum marks."
+                "Previous Exam Marks cannot be greater than "
+                "Previous Exam Maximum Marks."
+            )
+
+        elif actual_marks > actual_max_marks:
+
+            st.error(
+                "Actual Exam Marks cannot be greater than "
+                "Actual Exam Maximum Marks."
             )
 
         else:
 
             previous_percentage = (
-                previous_marks / maximum_marks
+                previous_marks / previous_max_marks
             ) * 100
 
-            input_data = pd.DataFrame([{
-                "Study_Hours": study_hours,
-                "Attendance": attendance,
-                "Previous_Score": previous_percentage,
-                "Assignments_Completed": assignments
-            }])
+            actual_percentage = (
+                actual_marks / actual_max_marks
+            ) * 100
 
-            prediction = model.predict(input_data)[0]
+            input_data = pd.DataFrame({
+                "Study_Hours": [study_hours],
+                "Attendance": [attendance],
+                "Previous_Score": [previous_percentage],
+                "Assignments_Completed": [assignments]
+            })
 
-            prediction = max(
-                0,
-                min(100, float(prediction))
+            predicted_score = float(
+                model.predict(input_data)[0]
             )
 
-            prediction = round(prediction, 2)
+            predicted_score = max(
+                0,
+                min(100, predicted_score)
+            )
 
-            new_record = {
-                "Date": datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                "Study_Hours": study_hours,
-                "Previous_Marks": previous_marks,
-                "Maximum_Marks": maximum_marks,
-                "Previous_Percentage": round(
-                    previous_percentage, 2
+            predicted_percentage = predicted_score
+
+            if actual_percentage > previous_percentage:
+
+                improvement_message = (
+                    "🎉 Yes! You improved! Keep up the great work!"
+                )
+
+            elif actual_percentage < previous_percentage:
+
+                improvement_message = (
+                    "💪 No, you still need to improve. "
+                    "Keep working hard—you can do it!"
+                )
+
+            else:
+
+                improvement_message = (
+                    "📚 You maintained your performance. "
+                    "Keep working to improve!"
+                )
+
+            prediction = {
+                "Study Hours": study_hours,
+                "Previous Exam Percentage": round(
+                    previous_percentage,
+                    2
                 ),
                 "Attendance": attendance,
-                "Assignments_Completed": assignments,
-                "Predicted_Score": prediction,
-                "Predicted_Percentage": prediction
+                "Assignments Completed": assignments,
+                "Predicted Score": round(
+                    predicted_score,
+                    2
+                ),
+                "Predicted Percentage": round(
+                    predicted_percentage,
+                    2
+                ),
+                "Actual Exam Percentage": round(
+                    actual_percentage,
+                    2
+                )
             }
 
+            st.session_state.last_prediction = prediction
+
             st.session_state.prediction_history.append(
-                new_record
+                prediction
             )
 
-            st.session_state.last_prediction = new_record
+            st.success(
+                "Prediction completed successfully!"
+            )
 
-            st.rerun()
+            st.subheader("📊 Prediction Results")
 
-    # Display latest prediction
-    last_prediction = st.session_state.last_prediction
+            result_col1, result_col2 = st.columns(2)
 
-    if last_prediction is not None:
+            with result_col1:
 
-        st.success("Prediction completed successfully!")
+                st.metric(
+                    "Previous Exam Percentage",
+                    f"{previous_percentage:.2f}%"
+                )
 
-        result_col1, result_col2 = st.columns(2)
+                st.metric(
+                    "Predicted Exam Score",
+                    f"{predicted_score:.2f}"
+                )
 
-        result_col1.metric(
-            "Predicted Exam Score",
-            f"{last_prediction['Predicted_Score']:.2f} / 100"
-        )
+            with result_col2:
 
-        result_col2.metric(
-            "Predicted Exam Percentage",
-            f"{last_prediction['Predicted_Percentage']:.2f}%"
-        )
+                st.metric(
+                    "Predicted Exam Percentage",
+                    f"{predicted_percentage:.2f}%"
+                )
 
-        st.info(
-            "This is an estimated result generated "
-            "by the trained machine learning model."
-        )
+                st.metric(
+                    "Actual Exam Percentage",
+                    f"{actual_percentage:.2f}%"
+                )
 
-        latest_df = pd.DataFrame([last_prediction])
+            st.info(improvement_message)
 
-        latest_csv = latest_df.to_csv(
-            index=False
-        ).encode("utf-8")
+            st.divider()
 
-        st.download_button(
-            label="💾 Save This Prediction",
-            data=latest_csv,
-            file_name="my_student_prediction.csv",
-            mime="text/csv",
-            key="download_latest"
-        )
+            st.subheader("💾 Save Prediction")
 
-        st.caption(
-            "Your prediction is temporary unless you download and save it."
-        )
+            save_data = pd.DataFrame([prediction])
+
+            csv_data = save_data.to_csv(
+                index=False
+            ).encode("utf-8")
+
+            st.download_button(
+                "💾 Save This Prediction",
+                data=csv_data,
+                file_name="student_prediction.csv",
+                mime="text/csv"
+            )
+
+            if st.session_state.prediction_history:
+
+                all_data = pd.DataFrame(
+                    st.session_state.prediction_history
+                )
+
+                all_csv = all_data.to_csv(
+                    index=False
+                ).encode("utf-8")
+
+                st.download_button(
+                    "📥 Save All Predictions",
+                    data=all_csv,
+                    file_name="prediction_history.csv",
+                    mime="text/csv"
+                )
+
+            st.success(
+                "Prediction added to your current session history."
+            )
